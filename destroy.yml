@@ -1,0 +1,81 @@
+---
+- name: Safely delete resources belonging to this lab VPC
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - group_vars/all.yml
+  tasks:
+    - name: Look up VPC by its unique project Name tag
+      amazon.aws.ec2_vpc_net_info:
+        region: "{{ aws_region }}"
+        filters:
+          'tag:Name': "{{ vpc_name }}"
+      register: found_vpcs
+
+    - name: Refuse ambiguous deletion
+      ansible.builtin.assert:
+        that: found_vpcs.vpcs | length <= 1
+        fail_msg: More than one VPC matches the lab tag; inspect manually.
+
+    - name: Delete lab networking when VPC exists
+      when: found_vpcs.vpcs | length == 1
+      block:
+        - name: Record existing VPC ID
+          ansible.builtin.set_fact:
+            vpc_id: "{{ found_vpcs.vpcs[0].vpc_id }}"
+
+        - name: Remove web security group
+          amazon.aws.ec2_security_group:
+            region: "{{ aws_region }}"
+            vpc_id: "{{ vpc_id }}"
+            name: "{{ web_security_group_name }}"
+            state: absent
+
+        - name: Remove public route table (also removes subnet association)
+          amazon.aws.ec2_vpc_route_table:
+            region: "{{ aws_region }}"
+            vpc_id: "{{ vpc_id }}"
+            state: absent
+            lookup: tag
+            tags:
+              Name: "{{ public_route_table_name }}"
+
+        - name: Remove private route table
+          amazon.aws.ec2_vpc_route_table:
+            region: "{{ aws_region }}"
+            vpc_id: "{{ vpc_id }}"
+            state: absent
+            lookup: tag
+            tags:
+              Name: "{{ private_route_table_name }}"
+
+        - name: Remove internet gateway
+          amazon.aws.ec2_vpc_igw:
+            region: "{{ aws_region }}"
+            vpc_id: "{{ vpc_id }}"
+            state: absent
+
+        - name: Remove public subnet
+          amazon.aws.ec2_vpc_subnet:
+            region: "{{ aws_region }}"
+            vpc_id: "{{ vpc_id }}"
+            cidr: "{{ public_subnet_cidr }}"
+            state: absent
+
+        - name: Remove private subnet
+          amazon.aws.ec2_vpc_subnet:
+            region: "{{ aws_region }}"
+            vpc_id: "{{ vpc_id }}"
+            cidr: "{{ private_subnet_cidr }}"
+            state: absent
+
+        - name: Delete VPC after dependencies are removed
+          amazon.aws.ec2_vpc_net:
+            region: "{{ aws_region }}"
+            vpc_id: "{{ vpc_id }}"
+            state: absent
+
+    - name: Show cleanup status
+      ansible.builtin.debug:
+        msg: "Cleanup finished or VPC was already absent. Verify in the AWS console."

@@ -1,0 +1,32 @@
+---
+- name: Attach internet gateway to VPC
+  amazon.aws.ec2_vpc_igw:
+    state: present
+    region: "{{ aws_region }}"
+    vpc_id: "{{ vpc_id }}"
+    tags: "{{ common_tags | combine({'Name': igw_name}) }}"
+  register: internet_gateway
+
+- name: Configure public route table and subnet association
+  amazon.aws.ec2_vpc_route_table:
+    state: present
+    region: "{{ aws_region }}"
+    vpc_id: "{{ vpc_id }}"
+    tags: "{{ common_tags | combine({'Name': public_route_table_name}) }}"
+    subnets:
+      - "{{ public_subnet.subnet.id }}"
+    routes:
+      - dest: 0.0.0.0/0
+        gateway_id: "{{ internet_gateway.gateway_id }}"
+  register: public_route_table
+
+- name: Configure private route table with only implicit local VPC route
+  amazon.aws.ec2_vpc_route_table:
+    state: present
+    region: "{{ aws_region }}"
+    vpc_id: "{{ vpc_id }}"
+    tags: "{{ common_tags | combine({'Name': private_route_table_name}) }}"
+    subnets:
+      - "{{ private_subnet.subnet.id }}"
+    routes: []
+  register: private_route_table

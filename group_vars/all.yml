@@ -1,0 +1,24 @@
+---
+# Adjust to the region allowed by your AWS Educate lab.
+aws_region: us-east-2
+project_name: student-ansible-vpc-lab
+vpc_cidr: 10.42.0.0/16
+public_subnet_cidr: 10.42.1.0/24
+private_subnet_cidr: 10.42.2.0/24
+# Keep availability zones in the same region, and confirm your lab supports them.
+public_az: us-east-2a
+private_az: us-east-2b
+# REQUIRED: replace with your own public IPv4 address, e.g. 203.0.113.10/32.
+# Documentation-only address below must be changed; deployment fails until replaced.
+ssh_allowed_cidr: 192.158.27.86/32
+vpc_name: "{{ project_name }}-vpc"
+public_subnet_name: "{{ project_name }}-public"
+private_subnet_name: "{{ project_name }}-private"
+igw_name: "{{ project_name }}-igw"
+public_route_table_name: "{{ project_name }}-public-rt"
+private_route_table_name: "{{ project_name }}-private-rt"
+web_security_group_name: "{{ project_name }}-web-sg"
+common_tags:
+  Project: "{{ project_name }}"
+  ManagedBy: Ansible
+  Environment: Training

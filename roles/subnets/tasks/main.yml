@@ -1,0 +1,22 @@
+---
+- name: Create or reuse public subnet
+  amazon.aws.ec2_vpc_subnet:
+    state: present
+    region: "{{ aws_region }}"
+    vpc_id: "{{ vpc_id }}"
+    cidr: "{{ public_subnet_cidr }}"
+    az: "{{ public_az }}"
+    map_public: true
+    tags: "{{ common_tags | combine({'Name': public_subnet_name}) }}"
+  register: public_subnet
+
+- name: Create or reuse private subnet
+  amazon.aws.ec2_vpc_subnet:
+    state: present
+    region: "{{ aws_region }}"
+    vpc_id: "{{ vpc_id }}"
+    cidr: "{{ private_subnet_cidr }}"
+    az: "{{ private_az }}"
+    map_public: false
+    tags: "{{ common_tags | combine({'Name': private_subnet_name}) }}"
+  register: private_subnet

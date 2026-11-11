@@ -1,0 +1,12 @@
+.env
+.env.*
+*.pem
+*.key
+.aws/
+credentials
+aws_credentials
+ansible-venv/
+venv/
+__pycache__/
+*.pyc
+*.retry

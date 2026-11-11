@@ -1,0 +1,15 @@
+---
+- name: Create or reuse VPC
+  amazon.aws.ec2_vpc_net:
+    name: "{{ vpc_name }}"
+    cidr_block: "{{ vpc_cidr }}"
+    region: "{{ aws_region }}"
+    dns_support: true
+    dns_hostnames: true
+    state: present
+    tags: "{{ common_tags | combine({'Name': vpc_name}) }}"
+  register: created_vpc
+
+- name: Record VPC ID
+  ansible.builtin.set_fact:
+    vpc_id: "{{ created_vpc.vpc.id }}"

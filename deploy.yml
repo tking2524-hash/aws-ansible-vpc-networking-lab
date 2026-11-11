@@ -1,0 +1,30 @@
+---
+- name: Create AWS lab network
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - group_vars/all.yml
+  pre_tasks:
+    - name: Require a real restricted SSH IP address
+      ansible.builtin.assert:
+        that:
+          - ssh_allowed_cidr != '203.0.113.10/32'
+          - ssh_allowed_cidr is match('^(?:[0-9]{1,3}\.){3}[0-9]{1,3}/32$')
+        fail_msg: "Set ssh_allowed_cidr to YOUR public IPv4 /32 in group_vars/all.yml"
+  roles:
+    - vpc
+    - subnets
+    - gateway
+    - security_group
+  post_tasks:
+    - name: Display deployed resource IDs
+      ansible.builtin.debug:
+        msg:
+          vpc: "{{ vpc_id }}"
+          public_subnet: "{{ public_subnet.subnet.id }}"
+          private_subnet: "{{ private_subnet.subnet.id }}"
+          internet_gateway: "{{ internet_gateway.gateway_id }}"
+          public_route_table: "{{ public_route_table.route_table.route_table_id }}"
+          private_route_table: "{{ private_route_table.route_table.route_table_id }}"
+          security_group: "{{ web_sg.group_id }}"

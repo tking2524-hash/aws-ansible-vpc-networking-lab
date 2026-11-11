@@ -1,0 +1,29 @@
+---
+- name: Create web server security group with restricted SSH
+  amazon.aws.ec2_security_group:
+    name: "{{ web_security_group_name }}"
+    description: Web server rules for AWS Ansible networking lab
+    region: "{{ aws_region }}"
+    vpc_id: "{{ vpc_id }}"
+    state: present
+    tags: "{{ common_tags | combine({'Name': web_security_group_name}) }}"
+    rules:
+      - proto: tcp
+        from_port: 80
+        to_port: 80
+        cidr_ip: 0.0.0.0/0
+        rule_desc: Public HTTP
+      - proto: tcp
+        from_port: 443
+        to_port: 443
+        cidr_ip: 0.0.0.0/0
+        rule_desc: Public HTTPS
+      - proto: tcp
+        from_port: 22
+        to_port: 22
+        cidr_ip: "{{ ssh_allowed_cidr }}"
+        rule_desc: Restricted administrator SSH
+    rules_egress:
+      - proto: -1
+        cidr_ip: 0.0.0.0/0
+  register: web_sg
