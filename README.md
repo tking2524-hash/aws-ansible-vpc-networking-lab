@@ -1,127 +1,332 @@
 # AWS VPC Networking with Ansible
 
-## Purpose
-Create one AWS VPC, a public and a private subnet, an internet gateway, two subnet-associated route tables, and a web security group using four reusable Ansible roles. Run a second deployment to evaluate idempotence and remove everything with `destroy.yml`.
+## Project Overview
 
-## Project layout
-- `deploy.yml`: runs `vpc`, `subnets`, `gateway`, and `security_group` in dependency order.
-- `destroy.yml`: removes resources in reverse dependency order.
-- `group_vars/all.yml`: regional settings, CIDR blocks, availability zones, names, and restricted SSH source.
-- `roles/vpc/tasks/main.yml`: provisions the VPC.
-- `roles/subnets/tasks/main.yml`: provisions the public and private subnets.
-- `roles/gateway/tasks/main.yml`: attaches an internet gateway and manages public/private routes and associations.
-- `roles/security_group/tasks/main.yml`: permits inbound HTTP (80), HTTPS (443), and SSH (22) from one trusted public IPv4 address.
+This project demonstrates how to automate AWS networking resources using Ansible. The goal was to create a Virtual Private Cloud (VPC), configure public and private subnets, establish routing through an internet gateway, and implement security group rules.
 
-## Requirements and setup
-Use an Ansible controller with Python, Ansible Core, AWS CLI v2, and internet access to the AWS APIs. Linux or WSL Ubuntu is recommended; run the playbook locally rather than against an EC2 instance. The controller must have authorization to create/delete VPC networking resources. Restricted AWS Educate/AWS Academy labs may limit regions, AZs, or IAM actions.
+The project uses four reusable Ansible roles to organize the deployment. I also tested idempotence, verified the resources in the AWS Management Console, and successfully removed the infrastructure using a cleanup playbook.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install ansible-core -r requirements.txt
-ansible-galaxy collection install -r requirements.yml
-ansible --version
-ansible-galaxy collection list amazon.aws
-aws --version
+**Project Status:** Successfully deployed, tested, verified, and removed.
+
+**AWS Region:** US East (Ohio) — `us-east-2`
+
+**GitHub Repository:** https://github.com/tking2524-hash/aws-ansible-vpc-networking-lab
+
+## 1. Project Structure
+
+The project includes the following files:
+
+```text
+aws-ansible-vpc-networking-lab/
+├── .gitignore
+├── README.md
+├── deploy.yml
+├── destroy.yml
+├── inventory.ini
+├── group_vars/
+│   └── all.yml
+└── roles/
+    ├── vpc/
+    │   └── tasks/main.yml
+    ├── subnets/
+    │   └── tasks/main.yml
+    ├── gateway/
+    │   └── tasks/main.yml
+    └── security_group/
+        └── tasks/main.yml
 ```
 
-If you already have Ansible installed, only install boto3/botocore into the Python interpreter running your local Ansible tasks and install the collection.
+### Ansible Roles
 
-### Temporary AWS credentials
-Start the AWS Educate/lab session, copy the **temporary** AWS access key ID, secret access key, and session token from the lab's credentials panel to the controller environment. For Linux/WSL, enter the following commands directly in a trusted terminal, replacing placeholders privately; **do not write real credentials to files in the Git project**:
+- **vpc:** Creates and configures the AWS VPC.
+- **subnets:** Creates the public and private subnets.
+- **gateway:** Configures the internet gateway, route tables, routes, and subnet associations.
+- **security_group:** Creates the web server security group and configures HTTP, HTTPS, and restricted SSH access.
+
+Using separate roles makes the project easier to maintain, troubleshoot, and reuse.
+
+## 2. Requirements and Environment
+
+The following tools were used:
+
+- AWS account with access to networking resources
+- AWS Management Console
+- AWS CloudShell
+- Python 3.13
+- Ansible Core 2.21.6
+- Amazon AWS Ansible collection
+- Boto3 and Botocore
+- Git and GitHub
+
+I used AWS CloudShell as my Ansible control system because it provided a terminal with access to my authenticated AWS environment.
+
+### Installing Ansible
+
+I created a Python virtual environment inside AWS CloudShell:
 
 ```bash
-export AWS_ACCESS_KEY_ID='YOUR_TEMPORARY_KEY'
-export AWS_SECRET_ACCESS_KEY='YOUR_TEMPORARY_SECRET'
-export AWS_SESSION_TOKEN='YOUR_TEMPORARY_SESSION_TOKEN'
-export AWS_DEFAULT_REGION='us-east-1'
+python3 -m venv ~/ansible-venv
+source ~/ansible-venv/bin/activate
+```
+
+I then installed Ansible and the required AWS dependencies:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install ansible boto3 botocore
+ansible-galaxy collection install amazon.aws
+```
+
+I verified the installation using:
+
+```bash
+ansible --version
+ansible-galaxy collection list amazon.aws
+```
+
+If CloudShell starts a new terminal session, the environment can be activated again using:
+
+```bash
+source ~/ansible-venv/bin/activate
+```
+
+## 3. AWS Authentication and Credential Security
+
+I authenticated to AWS through the CloudShell environment rather than manually storing AWS access keys in my Ansible files.
+
+I verified the AWS identity using:
+
+```bash
 aws sts get-caller-identity
 ```
 
-Alternatively, use the lab-provided AWS CLI profile in `~/.aws/credentials` (outside this Git repository). Refresh all three temporary credential values if the session expires. Never commit credentials, terminal transcripts with secrets, or screenshots revealing tokens. The `.gitignore` excludes common local secret files. The `ansible` AWS modules use Boto3's credential provider chain; credentials are not hardcoded in any playbook.
+The command completed successfully, confirming that my AWS session was authenticated.
 
-## Required variables
-Edit `group_vars/all.yml` *before running*:
+To protect my credentials, I did not place AWS secret access keys, session tokens, or GitHub personal access tokens in my playbooks or Git repository.
 
-| Variable | Example | Meaning |
-| --- | --- | --- |
-| `aws_region` | `us-east-1` | Lab-permitted AWS region |
-| `project_name` | `student-ansible-vpc-lab` | Unique prefix for resources |
-| `vpc_cidr` | `10.42.0.0/16` | VPC network |
-| `public_subnet_cidr` | `10.42.1.0/24` | Public subnet range |
-| `private_subnet_cidr` | `10.42.2.0/24` | Private subnet range |
-| `public_az` | `us-east-1a` | Public subnet AZ |
-| `private_az` | `us-east-1b` | Private subnet AZ |
-| `ssh_allowed_cidr` | `YOUR_PUBLIC_IP/32` | Required restricted inbound SSH source |
+The project also includes a `.gitignore` file to help prevent unnecessary local files and common credential files from being committed.
 
-Set the AZs to ones available in your specific lab. Public and private subnet CIDRs must not overlap. To find your public IPv4 address, use a trusted IP-checking service; append `/32`. The bundled documentation-only `203.0.113.10/32` is intentionally blocked by a preflight assertion.
+For environments outside CloudShell, AWS temporary credentials can be provided securely through environment variables or an approved AWS credentials profile.
 
-## Deployment and verification
-Run from the **project root**:
+## 4. AWS Network Configuration
 
-```bash
-ansible-playbook -i inventory.ini deploy.yml | tee evidence/deployment.txt
+I deployed the following networking configuration:
+
+| Resource | Configuration |
+|---|---|
+| Region | `us-east-2` |
+| VPC | `10.42.0.0/16` |
+| Public subnet | `10.42.1.0/24` |
+| Private subnet | `10.42.2.0/24` |
+| Public availability zone | `us-east-2a` |
+| Private availability zone | `us-east-2b` |
+| Internet gateway | Attached to the VPC |
+| Route tables | Separate public and private tables |
+| Security group | HTTP, HTTPS, restricted SSH |
+
+The configuration values are stored in `group_vars/all.yml` instead of being repeated throughout the playbooks.
+
+### Public and Private Subnets
+
+The public subnet uses a route table with a default route to the internet gateway:
+
+```text
+10.42.0.0/16 → local
+0.0.0.0/0    → Internet Gateway
 ```
 
-In the AWS Console, use **VPC → Your VPCs**, **Subnets**, **Internet gateways**, **Route tables**, and **Security groups**; confirm names and region. The gateway should be attached to the lab VPC. The public route table should have `0.0.0.0/0 -> igw-...` and an association with the public subnet. The private route table should be associated with the private subnet and have only the local VPC route. The public subnet has `Auto-assign public IPv4` enabled; the private subnet has it disabled. No EC2 instance is deployed, so internet connectivity itself is not tested by this assignment.
+The private subnet uses only local VPC routing:
 
-**AWS CLI checks:** use the name/ID printed by the playbook, replacing `VPC_ID` with your actual VPC ID:
-
-```bash
-aws ec2 describe-vpcs --filters 'Name=tag:Name,Values=student-ansible-vpc-lab-vpc' --region us-east-1
-aws ec2 describe-subnets --filters 'Name=vpc-id,Values=VPC_ID' --region us-east-1
-aws ec2 describe-internet-gateways --filters 'Name=attachment.vpc-id,Values=VPC_ID' --region us-east-1
-aws ec2 describe-route-tables --filters 'Name=vpc-id,Values=VPC_ID' --region us-east-1
-aws ec2 describe-security-groups --filters 'Name=vpc-id,Values=VPC_ID' --region us-east-1
+```text
+10.42.0.0/16 → local
 ```
 
-## Idempotence
-Run exactly the same command again without changing any variables or resources:
+This design prevents the private subnet from having a direct internet route. No EC2 instances were deployed as part of this assignment.
+
+### Security Group Configuration
+
+I configured the following inbound rules:
+
+| Type | Port | Source |
+|---|---|---|
+| HTTP | 80 | `0.0.0.0/0` |
+| HTTPS | 443 | `0.0.0.0/0` |
+| SSH | 22 | Restricted IPv4 `/32` |
+
+The restricted SSH source was configured in the project variables rather than allowing SSH access from the entire internet.
+
+## 5. Deploying the Network
+
+I uploaded the Ansible project to AWS CloudShell, extracted it, and configured the project variables for the Ohio region.
+
+Before deploying, I checked the playbook syntax:
 
 ```bash
-ansible-playbook -i inventory.ini deploy.yml | tee evidence/idempotence.txt
+ansible-playbook -i inventory.ini deploy.yml --syntax-check
 ```
 
-Review the play recap. Expected result is no duplicate resources and ideally `changed=0` on the second run. The read-only debug/recording steps should also report `ok`. If a cloud module still reports `changed`, inspect the task results and the AWS Console before assuming the operation was not idempotent.
+The syntax check completed successfully.
 
-## Cleanup
-**Capture deployment and idempotence screenshots before cleanup.** Then run:
+I then deployed the network:
 
 ```bash
-ansible-playbook -i inventory.ini destroy.yml | tee evidence/cleanup.txt
+ansible-playbook -i inventory.ini deploy.yml
 ```
 
-The destroy playbook looks up the VPC by its exact project Name tag and refuses to delete anything if multiple VPCs match. The order is: web security group → public/private route tables → internet gateway → subnets → VPC. It does not delete the default/main VPC route table; AWS removes that when deleting the VPC. It does **not** remove unrelated resources, and VPC deletion can fail if EC2 instances or other dependencies have been added. Verify that the project VPC no longer appears under **Your VPCs** and check the corresponding views for related resources. If the lab session credentials have expired, refresh them before cleanup.
+### Deployment Results
 
-## Screenshots and evidence checklist
-Save screenshots of the VPC details, two subnets, attached gateway, public/private routes **and associations**, security-group inbound rules, deployment recap, idempotence recap, and VPC absence after cleanup. Keep actual CLI/playbook logs in `evidence/` locally; they are ignored from Git by default so you can review them for sensitive information before deciding what to upload separately to Moodle.
+```text
+PLAY RECAP
+localhost : ok=10 changed=7 unreachable=0 failed=0
+```
 
-## Common problems / troubleshooting
-- `Unable to locate credentials` or `ExpiredToken`: set all three temporary AWS environment variables again in the same terminal.
-- `AccessDenied` / `UnauthorizedOperation`: your classroom account does not have the required API permission. Ask the instructor; do not attempt to bypass lab policies.
-- `InvalidParameterValue` for availability zone: choose permitted AZs within your configured region.
-- AWS resources missing from console: switch the console to the same AWS region as `aws_region`.
-- `DependencyViolation` on cleanup: locate added EC2 instances, ENIs, or other resources blocking deletion; remove only resources you own.
-- Python `boto3` errors: install requirements into the Python environment used by Ansible on localhost.
-- Second run unexpectedly changes resources: inspect task output, resource names/tags, drift, and route/SG rules.
+The deployment completed without errors.
 
-## Git workflow and submission
+I verified the VPC, subnets, internet gateway, route tables, and security group through the AWS Management Console.
+
+## 6. Testing Idempotence
+
+To verify that the playbook was idempotent, I ran the deployment again without changing the configuration:
+
 ```bash
-git init
-git add ansible.cfg inventory.ini requirements.yml requirements.txt .gitignore .env.example group_vars roles deploy.yml
-git commit -m 'Add modular AWS VPC deployment roles'
-git add destroy.yml README.md
-git commit -m 'Add AWS cleanup automation and documentation'
-git branch -M main
-git remote add origin https://github.com/YOUR-USERNAME/YOUR-REPO.git
-git push -u origin main
+ansible-playbook -i inventory.ini deploy.yml | tee idempotence_output.txt
 ```
 
-For a preexisting repository, omit `git init` and use its remote URL. Do not claim live deployment/idempotence evidence until it has actually run in AWS. Submit the project archive, real Git URL, README, real task output, screenshots, deletion evidence, and the short reflection below.
+### Second Deployment Results
 
-## Reflection (edit after completing the lab)
-The route tables and subnet associations were the most challenging parts to automate because the public subnet requires a default route through the internet gateway while the private subnet must not have one. Resource creation order matters because a VPC must exist before subnets and gateways can attach, and resources must be detached and removed before the VPC can be deleted. I protected the temporary AWS credentials by storing them outside the repository, using environment variables, and avoiding passwords or tokens in Git commits and screenshots. For production, I would use separate environments, stricter access controls, infrastructure review/testing, monitoring and flow logs, least-privilege IAM, and a high-availability network design. **Replace this example with your real experiences and any problems you actually encounter.**
+```text
+PLAY RECAP
+localhost : ok=10 changed=0 unreachable=0 failed=0
+```
+
+The second run reported zero changes.
+
+This confirmed that Ansible recognized the existing resources and did not attempt unnecessary modifications or create duplicate networking components.
+
+## 7. AWS Resource Verification
+
+I verified the following resources in the AWS Management Console:
+
+- The VPC was available with CIDR `10.42.0.0/16`.
+- Both public and private subnets existed and were available.
+- The internet gateway was attached to the correct VPC.
+- The public route table had an active default route to the internet gateway.
+- The private route table contained only the local VPC route.
+- The public and private route tables were associated with the correct subnets.
+- The security group contained three inbound rules for HTTP, HTTPS, and restricted SSH.
+
+Screenshots were captured to document the networking configuration.
+
+## 8. Removing AWS Resources
+
+After completing the verification and idempotence test, I used the cleanup playbook to remove the lab infrastructure.
+
+I checked the playbook's resource selection and deletion order before running it:
+
+```bash
+ansible-playbook -i inventory.ini destroy.yml --syntax-check
+```
+
+I then executed:
+
+```bash
+ansible-playbook -i inventory.ini destroy.yml | tee cleanup_output.txt
+```
+
+### Cleanup Results
+
+```text
+PLAY RECAP
+localhost : ok=11 changed=7 unreachable=0 failed=0
+```
+
+The cleanup completed successfully.
+
+The playbook removed the dependent resources before deleting the VPC.
+
+### Verifying Deletion
+
+I verified the deletion using:
+
+```bash
+aws ec2 describe-vpcs \
+  --region us-east-2 \
+  --vpc-ids vpc-0dc6829911620a13e
+```
+
+AWS returned:
+
+```text
+InvalidVpcID.NotFound
+```
+
+This confirmed that the lab VPC no longer existed.
+
+## 9. Problems Encountered and Solutions
+
+### Ansible Not Installed
+
+When I first opened AWS CloudShell, the `ansible` command was not recognized.
+
+I resolved this by creating a Python virtual environment and installing Ansible and the required AWS dependencies.
+
+### Virtual Environment Not Active
+
+After opening a new CloudShell session, I received an `ansible-playbook: command not found` error.
+
+I resolved the issue by activating the existing virtual environment again.
+
+### AWS Region and VPC Identification
+
+I needed to make sure the region in my Ansible variables matched the AWS Console region.
+
+I configured the deployment for `us-east-2` and used AWS resource names, tags, and VPC IDs to confirm that I was viewing the correct infrastructure.
+
+### GitHub Authentication
+
+I initially received GitHub authentication errors when attempting to push my project.
+
+I learned that GitHub does not accept regular account passwords for HTTPS Git operations. After creating a personal access token, I also encountered a 403 permission error because the token lacked the required repository Contents permission.
+
+I corrected the token permissions to allow Contents: Read and write, then successfully pushed my project to GitHub.
+
+## 10. GitHub Repository
+
+The completed Ansible project was uploaded to:
+
+https://github.com/tking2524-hash/aws-ansible-vpc-networking-lab
+
+The repository contains the deployment playbook, cleanup playbook, variable configuration, inventory, README, and all four Ansible roles.
+
+Git was used to track and publish the project files.
+
+## 11. Reflection
+
+**Which AWS networking component was the most difficult to automate?**
+
+The route tables were the most challenging part because I had to understand how the public and private subnets use different routes. The public subnet needed access through the internet gateway, while the private subnet needed to remain isolated from direct internet access. I also had to make sure each route table was associated with the correct subnet.
+
+**Why is the order of resource creation and removal important?**
+
+The order is important because AWS networking resources depend on each other. I needed to create the VPC before creating subnets and attaching the internet gateway. During cleanup, I had to remove the security group, route tables, gateway, and subnets before deleting the VPC. Following the correct order prevented dependency errors.
+
+**How did you protect the temporary AWS credentials?**
+
+I used AWS CloudShell, which allowed me to authenticate through my AWS session without storing AWS access keys in the playbooks. I also kept my GitHub authentication token separate from the project and used a `.gitignore` file to reduce the risk of committing sensitive files.
+
+**What would you change before using this network design in production?**
+
+Before using this design in production, I would add more security and monitoring. I would use least-privilege IAM permissions, enable VPC Flow Logs, and consider private administrative access instead of direct SSH. I would also improve high availability by deploying across multiple availability zones and adding redundancy where needed.
+
+## 12. Conclusion
+
+This assignment helped me understand how Ansible can automate AWS networking resources using reusable roles. I successfully created and verified a VPC network with public and private subnets, tested idempotence with zero changes on the second run, and removed the infrastructure using Ansible.
+
+I also gained hands-on experience with AWS CloudShell, Git, GitHub authentication, and troubleshooting cloud automation problems.
 
 ## References
-- Ansible amazon.aws collection: https://docs.ansible.com/projects/ansible/latest/collections/amazon/aws/
-- AWS temporary credentials: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_use-resources.html
+
+- Ansible AWS Collection: https://docs.ansible.com/ansible/latest/collections/amazon/aws/
+- AWS VPC Documentation: https://docs.aws.amazon.com/vpc/
+- AWS Temporary Credentials: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_use-resources.html
+- GitHub Personal Access Tokens: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
